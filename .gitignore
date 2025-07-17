@@ -24,3 +24,7 @@ __pycache__/
 # Ignore outros arquivos temporários comuns
 .DS_Store
 Thumbs.db
+
+# Arquivos .c e .xml usados para testes
+*.c
+*.xml

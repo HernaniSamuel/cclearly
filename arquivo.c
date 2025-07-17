@@ -1,51 +1,36 @@
 #include <stdio.h>
-#include <stdlib.h>
-
-#define MAX 10
-
-typedef struct {
-    int id;
-    char nome[50];
-} Pessoa;
-
-void imprimir(Pessoa *p) {
-    printf("ID: %d, Nome: %s\n", p->id, p->nome);
-}
-
-int fatorial(int n) {
-    if (n <= 1) return 1;
-    return n * fatorial(n - 1);
-}
 
 int main() {
-    Pessoa *p = malloc(sizeof(Pessoa));
-    if (!p) goto erro;
+    int x = 1, y = 2;
 
-    p->id = 42;
-    snprintf(p->nome, 50, "Zé do Ponteiro");
+    if (x > 0)
+        printf("if sem chaves\n");
 
-    imprimir(p);
+    else if (y > 0)
+        printf("else if sem chaves\n");
 
-    for (int i = 0; i < MAX; i++) {
-        printf("%d! = %d\n", i, fatorial(i));
-    }
+    else
+        printf("else sem chaves\n");
 
-    int opcao = 2;
-    switch (opcao) {
+    while (x < 3)
+        x++;
+
+    do
+        y++;
+    while (y < 5);
+
+    for (int i = 0; i < 3; i++)
+        printf("for sem chaves: %d\n", i);
+
+    switch (x)
         case 1:
-            printf("Escolheu 1\n");
-            break;
-        case 2:
-            printf("Escolheu 2\n");
-            break;
-        default:
-            printf("Outra opção\n");
-    }
+            printf("case sem chaves\n");
 
-    free(p);
+    if (x > 0)
+        if (y > 0)
+            printf("nested if sem chaves\n");
+        else
+            printf("else do if interno\n");
+
     return 0;
-
-erro:
-    fprintf(stderr, "Erro de alocação!\n");
-    return 1;
 }

@@ -43,6 +43,6 @@ See `LICENSE` for full terms.
 
 ## Notes
 
-- The `srcml` binary and libraries remain under their original GPLv2 license.
+- The `srcml` binary and libraries remain under their original GPLv3 license.
 - This package does not alter the functionality or code of `srcml`, only wraps it for simplified distribution.
 
