@@ -12,7 +12,7 @@ def c2xml(name):
     env["APPIMAGE_EXTRACT_AND_RUN"] = "1"
 
     subprocess.run(
-        [str(appimage), str(arquivo_c), "-o", str(arquivo_xml)],
+        [str(appimage), str(arquivo_c), "--position", "-o", str(arquivo_xml)],
         env=env,
         check=True
     )
