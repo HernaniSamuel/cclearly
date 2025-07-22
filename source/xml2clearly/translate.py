@@ -19,3 +19,9 @@ def translate(tag: Tag) -> str:
     else:
         # Se não tem handler específico, traduz filhos
         return "".join(translate(child) for child in tag.children)
+
+
+
+# IMPORTS para registrar tradutores implementados em outros arquivos
+from source.xml2clearly.declarations import comments
+from source.xml2clearly.declarations import variables
