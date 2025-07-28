@@ -16,7 +16,7 @@ def c2xml(name):
         env=env,
         check=True
     )
-
-    print(f"✅ arquivo.xml gerado com sucesso em: {arquivo_xml}")
+    print("\033[1;33mWARNING: If there are syntax errors in C, srcML will generate corrupted XML, resulting in a corrupted .clearly file! Ensure the syntax of your C code is correct by running it with your preferred compiler.")
+    print(f"\033[1;32m✅ arquivo.xml gerado com sucesso em: {arquivo_xml}")
 
 c2xml("arquivo.c")

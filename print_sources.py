@@ -22,10 +22,13 @@ if __name__ == "__main__":
 
     # Se quiser limitar por nomes, edite aqui:
     filtros = [
+
+        "registry",
         "arrays",
         "base",
-        "__init__",
-
+        "comments",
+        "__init__"
+        # adicione o que quiser
     ]
 
     selecionados = [a for a in arquivos if any(f in a for f in filtros)]
