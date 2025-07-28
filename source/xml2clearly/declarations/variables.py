@@ -8,7 +8,7 @@ def translate_decl_stmt(tag: Tag) -> str:
         line = translate(decl)
         if line.strip():
             lines.append(line)
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines)
 
 @register("decl")
 def translate_decl(tag: Tag) -> str:

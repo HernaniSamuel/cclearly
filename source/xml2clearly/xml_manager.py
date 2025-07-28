@@ -7,6 +7,14 @@ class Tag:
     def __init__(self, elem, parent=None):
         self.name = etree.QName(elem).localname
         self.attrib = dict(elem.attrib)
+
+        # Extrai posições pos:start e pos:end como tuplas (linha, coluna)
+        start_str = self.attrib.get("{http://www.srcML.org/srcML/position}start")
+        end_str = self.attrib.get("{http://www.srcML.org/srcML/position}end")
+
+        self.start = tuple(map(int, start_str.split(":"))) if start_str else (float("inf"), float("inf"))
+        self.end = tuple(map(int, end_str.split(":"))) if end_str else (float("-inf"), float("-inf"))
+
         self.text = (elem.text or "").strip()
         self.parent = parent
 
@@ -18,6 +26,9 @@ class Tag:
 
         # Constrói filhos com referência ao self como parent
         self.children = [Tag(child, self) for child in elem]
+
+        # Ordena filhos pela posição no código original
+        self.children.sort(key=lambda c: c.start)
 
     def __repr__(self):
         return f"Tag(name={self.name}, indent={self.indent_level}, children={len(self.children)})"
@@ -43,6 +54,7 @@ class Tag:
         for match in matches:
             results += match._search_path(parts[1:])
         return results
+
 
 def generate_tag(xml_file):
     tree = etree.parse(xml_file)

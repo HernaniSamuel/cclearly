@@ -12,4 +12,4 @@ def translate_comment(tag):
     indented_lines = [indent + line for line in lines]
 
     # Juntar com nova linha
-    return "\n".join(indented_lines) + "\n"
+    return "\n".join(indented_lines)
