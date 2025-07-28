@@ -3,12 +3,10 @@ from source.xml2clearly.xml_manager import Tag
 
 @register("decl_stmt")
 def translate_decl_stmt(tag: Tag) -> str:
-    lines = []
-    for decl in tag.find_children("decl"):
-        line = translate(decl)
-        if line.strip():
-            lines.append(line)
-    return "\n".join(lines)
+    decls = tag.find_children("decl")
+    parts = [translate(decl) for decl in decls if translate(decl).strip()]
+    return ", ".join(parts)
+
 
 @register("decl")
 def translate_decl(tag: Tag) -> str:
