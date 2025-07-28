@@ -1,30 +1,4 @@
-from source.xml2clearly.translate import register, translate
 from source.xml2clearly.xml_manager import Tag
-
-@register("decl_stmt")
-def translate_decl_stmt(tag: Tag) -> str:
-    decls = tag.find_children("decl")
-    parts = [translate(decl) for decl in decls if translate(decl).strip()]
-    return ", ".join(parts)
-
-
-@register("decl")
-def translate_decl(tag: Tag) -> str:
-    var_name_tag = tag.find_children("name")
-    var_name = var_name_tag[0].text if var_name_tag else "UNNAMED"
-
-    type_tag = tag.find_children("type")
-    if type_tag and not type_tag[0].attrib.get("ref") == "prev":
-        type_str = translate_type(type_tag[0])
-    else:
-        type_str = find_previous_decl_type(tag)
-
-    init_tag = tag.find_children("init")
-    if init_tag:
-        init_str = translate_init(init_tag[0])
-        return f"{var_name}: {type_str} = {init_str}"
-    else:
-        return f"{var_name}: {type_str}"
 
 def find_previous_decl_type(tag: Tag) -> str:
     parent = tag.parent
@@ -60,11 +34,12 @@ def translate_type(type_tag: Tag) -> str:
     extract_type_parts(type_tag)
     return " ".join(parts).strip() or "UNKNOWN_TYPE"
 
-def translate_init(init_tag: Tag) -> str:
+def translate_init(init_tag: Tag, translate_fn) -> str:
     expr_tag = init_tag.find_children("expr")
     if expr_tag:
-        return translate(expr_tag[0]).strip()
+        return translate_fn(expr_tag[0]).strip()
     return "EMPTY_INIT"
+
 
 def extract_text_recursive(tag: Tag) -> str:
     texts = [tag.text] if tag.text else []
@@ -73,11 +48,3 @@ def extract_text_recursive(tag: Tag) -> str:
         if child_text:
             texts.append(child_text)
     return "".join(texts)
-
-@register("expr")
-def translate_expr(tag: Tag) -> str:
-    return extract_text_recursive(tag)
-
-@register("literal")
-def translate_literal(tag: Tag) -> str:
-    return tag.text or ""

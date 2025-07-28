@@ -1,6 +1,7 @@
-from source.xml2clearly.translate import register
+from source.xml2clearly.registry import register
 
-@register("comment")
+
+@register("comment", priority=10)
 def translate_comment(tag):
     indent = "    " * tag.indent_level
     text = tag.text  # pode conter múltiplas linhas, e já inclui os delimitadores // ou /* */
