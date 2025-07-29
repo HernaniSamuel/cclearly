@@ -20,7 +20,13 @@ def translate_decl_array(tag: Tag) -> str:
 
     # Extrair índices e construir array(..., tipo)
     indices = name_tag.find_children("index")
-    dims = [translate(index.find_children("expr")[0]) for index in indices]
+    dims = []
+    for index in indices:
+        exprs = index.find_children("expr")
+        if exprs:
+            dims.append(translate(exprs[0]))
+        else:
+            dims.append("?")  # ou "", ou trate como tipo especial
 
     array_type = base_type
     for dim in reversed(dims):
