@@ -28,4 +28,4 @@ def xml2c(xml_filename: str):
     print(f"✅ {arquivo_c.name} gerado com sucesso em: {arquivo_c}")
 
 # Exemplo de uso
-xml2c("arquivo.c.xml")
+xml2c("variables.xml")
