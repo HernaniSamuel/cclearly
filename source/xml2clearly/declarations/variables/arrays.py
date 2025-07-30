@@ -76,11 +76,8 @@ def translate_decl_array(tag: Tag) -> str:
 
 @register("block", priority=60)
 def translate_indexed_array_block(tag: Tag) -> str | None:
-    """
-    Traduz blocos indexados com detecção melhorada.
-    Corrige atribuições sequenciais para evitar sobrescrever índices explícitos.
-    """
     from source.xml2clearly.translate import translate
+
     if not is_indexed_array_block(tag):
         return None
 
@@ -90,7 +87,6 @@ def translate_indexed_array_block(tag: Tag) -> str | None:
         used_index_keys = set()
         sequential_index = 0
 
-        # Primeiro, adiciona todos os índices explícitos
         for expr in tag.find_children("expr"):
             if has_any_index(expr):
                 index_tag = next((n for n in expr.walk() if getattr(n, 'name', None) == "index"), None)
@@ -98,7 +94,6 @@ def translate_indexed_array_block(tag: Tag) -> str | None:
                 if index_expr:
                     index_str = translate(index_expr).strip()
                     value_str = None
-
                     found_eq = False
                     for child in expr.children:
                         if getattr(child, 'name', None) == "operator" and getattr(child, 'text', '') == "=":
@@ -111,23 +106,31 @@ def translate_indexed_array_block(tag: Tag) -> str | None:
                         used_index_keys.add(index_str)
                         items.append(f"{var_name}[{index_str}] = {value_str}")
 
-        # Agora, adiciona os valores que não têm índice explícito
         for expr in tag.find_children("expr"):
             if not has_any_index(expr):
                 for child in expr.children:
                     if getattr(child, 'name', None) == "literal":
                         value_str = translate(child).strip()
-
-                        # pula índices já usados
                         while str(sequential_index) in used_index_keys:
                             sequential_index += 1
-
                         items.append(f"{var_name}[{sequential_index}] = {value_str}")
                         used_index_keys.add(str(sequential_index))
                         sequential_index += 1
                         break
 
-        return "(" + ", ".join(items) + ")"
+        # pegar linhas de start e end da tag
+        start_str = tag.attrib.get("{http://www.srcML.org/srcML/position}start")
+        end_str = tag.attrib.get("{http://www.srcML.org/srcML/position}end")
+        start_line = int(start_str.split(":")[0]) if start_str else 0
+        end_line = int(end_str.split(":")[0]) if end_str else 0
+
+        if end_line > start_line:
+            # múltiplas linhas, formatar com quebras e indentação
+            joined = ",\n    ".join(items)
+            return "(\n    " + joined + "\n)"
+        else:
+            # tudo numa linha
+            return "(" + ", ".join(items) + ")"
 
     except Exception:
         import traceback
@@ -408,8 +411,22 @@ def extract_array_dimension(index_tag: Tag, translate_fn) -> str:
     return config.UNKNOWN_DIM
 
 
+def format_init_str(tag: Tag, init_str: str) -> str:
+    start_str = tag.attrib.get("{http://www.srcML.org/srcML/position}start")
+    end_str = tag.attrib.get("{http://www.srcML.org/srcML/position}end")
+    start_line = int(start_str.split(":")[0]) if start_str else 0
+    end_line = int(end_str.split(":")[0]) if end_str else 0
+
+    if end_line > start_line:
+        # Adiciona quebras e indentação
+        # Aqui pode ser necessário fazer split no init_str para adicionar quebras:
+        parts = [p.strip() for p in init_str.strip("()[]{}").split(",")]
+        joined = ",\n    ".join(parts)
+        return "(\n    " + joined + "\n)"
+    else:
+        return init_str
+
 def translate_array_init(init_tag: Tag, translate_fn) -> str:
-    """Traduz inicialização."""
     try:
         expr_tags = init_tag.find_children("expr")
         if not expr_tags:
@@ -418,9 +435,11 @@ def translate_array_init(init_tag: Tag, translate_fn) -> str:
         expr = expr_tags[0]
         block_tags = expr.find_children("block")
         if block_tags:
-            return translate_fn(block_tags[0]).strip()
+            raw = translate_fn(block_tags[0]).strip()
+            return format_init_str(block_tags[0], raw)
 
-        return translate_fn(expr).strip()
+        raw = translate_fn(expr).strip()
+        return format_init_str(expr, raw)
 
     except Exception:
         return "[]"
@@ -433,4 +452,3 @@ def translate_base_decl(tag: Tag) -> str:
         return base.translate_decl(tag)
     except Exception:
         return "TRANSLATION_ERROR"
-
