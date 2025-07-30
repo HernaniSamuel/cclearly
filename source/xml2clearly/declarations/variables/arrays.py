@@ -3,247 +3,434 @@ from source.xml2clearly.registry import register
 from source.xml2clearly.declarations.variables.helpers import translate_type
 
 
-@register("decl", priority=20)
-def translate_decl_array(tag: Tag) -> str:
-    """
-    Traduz declarações de arrays, incluindo inicializações.
+# =============================================================================
+# CONFIGURAÇÕES SIMPLES (opcional)
+# =============================================================================
 
-    Exemplos:
-    - int a[2] = {1,2} -> a: array(2, int) = [1, 2]
-    - int b[3][2] -> b: array(3, array(2, int))
-    - int c[], d[10] -> c: array(?, int), d: array(10, int)
-    """
-    from source.xml2clearly.translate import translate
-
-    if not is_array_tag(tag):
-        return translate_base_decl(tag)
-
-    # Extrair informações básicas
-    var_name = extract_variable_name(tag)
-    base_type = extract_base_type(tag)
-    array_type = build_array_type(tag, base_type, translate)
-
-    # Verificar se há inicialização
-    init_tag = tag.find_children("init")
-    if init_tag:
-        init_str = translate_array_init(init_tag[0], translate)
-        return f"{var_name}: {array_type} = {init_str}"
-    else:
-        return f"{var_name}: {array_type}"
+class ArrayConfig:
+    """Configurações básicas para arrays."""
+    UNKNOWN_DIM = "_"
+    UNNAMED_VAR = "UNNAMED"
+    UNKNOWN_TYPE = "UNKNOWN_TYPE"
 
 
-@register("block", priority=50)
-def translate_array_block(tag: Tag) -> str:
-    """
-    Traduz blocos de inicialização de arrays aninhados, transformando { ... } em [ ... ] corretamente.
+config = ArrayConfig()
 
-    Exemplo:
-    - {1, 2, 3}          -> [1, 2, 3]
-    - {{1, 2}, {3, 4}}   -> [[1, 2], [3, 4]]
-    """
-    from source.xml2clearly.translate import translate
 
-    # Verifica se é um bloco de inicialização de array
-    if not is_array_initialization_block(tag):
-        return None  # Deixa outros tradutores lidarem
+# =============================================================================
+# FUNÇÕES AUXILIARES MELHORADAS
+# =============================================================================
 
-    def translate_block_recursively(block_tag: Tag) -> str:
-        elements = []
+def safe_get_text(tag: Tag, default: str = "") -> str:
+    """Pega texto de forma segura."""
+    return tag.text.strip() if tag.text else default
 
-        for child in block_tag.children:
-            if isinstance(child, Tag):
-                if child.name == "expr":
-                    # Cada expr pode conter blocos ou literais
-                    translated = translate_expr_recursively(child)
-                    if translated is not None:
-                        elements.append(translated)
 
-        return "[" + ", ".join(elements) + "]"
+def find_tag_by_name(tag: Tag, name: str) -> Tag | None:
+    """Encontra primeira tag filha com nome específico."""
+    return next((child for child in tag.children
+                 if hasattr(child, 'name') and child.name == name), None)
 
-    def translate_expr_recursively(expr_tag: Tag) -> str | None:
-        """
-        Trata expr que pode conter:
-        - literal -> retorna direto
-        - block -> processa recursivamente
-        """
-        for child in expr_tag.children:
-            if isinstance(child, Tag):
-                if child.name == "block":
-                    return translate_block_recursively(child)
-                else:
-                    return translate(child).strip()
-        return None
 
-    return translate_block_recursively(tag)
-
-def is_array_tag(tag: Tag) -> bool:
-    """Verifica se a tag representa uma declaração de array."""
-    for name_tag in tag.find_children("name"):
-        if has_index_children(name_tag):
-            return True
+def has_any_index(tag: Tag) -> bool:
+    """Verifica se tem algum índice em qualquer lugar."""
+    if hasattr(tag, 'name') and tag.name == "index":
+        return True
+    if hasattr(tag, 'children'):
+        return any(has_any_index(child) for child in tag.children)
     return False
 
 
+# =============================================================================
+# MELHORIAS NO CÓDIGO ORIGINAL
+# =============================================================================
+
+@register("decl", priority=20)
+def translate_decl_array(tag: Tag) -> str:
+    """
+    Traduz declarações de arrays com melhor tratamento de erros.
+    """
+    from source.xml2clearly.translate import translate
+
+    try:
+        if not is_array_tag(tag):
+            return translate_base_decl(tag)
+
+        # Extrair informações básicas
+        var_name = extract_variable_name(tag)
+        base_type = extract_base_type(tag)
+        array_type = build_array_type(tag, base_type, translate)
+
+        # Verificar se há inicialização
+        init_tags = tag.find_children("init")
+        if init_tags:
+            init_str = translate_array_init(init_tags[0], translate)
+            return f"{var_name}: {array_type} = {init_str}"
+        else:
+            return f"{var_name}: {array_type}"
+
+    except Exception:
+        # Em caso de erro, tenta tradução base
+        return translate_base_decl(tag)
+
+
+@register("block", priority=60)
+def translate_indexed_array_block(tag: Tag) -> str | None:
+    """
+    Traduz blocos indexados com detecção melhorada.
+    Corrige atribuições sequenciais para evitar sobrescrever índices explícitos.
+    """
+    from source.xml2clearly.translate import translate
+    if not is_indexed_array_block(tag):
+        return None
+
+    try:
+        var_name = infer_variable_name(tag) or "?"
+        items = []
+        used_index_keys = set()
+        sequential_index = 0
+
+        # Primeiro, adiciona todos os índices explícitos
+        for expr in tag.find_children("expr"):
+            if has_any_index(expr):
+                index_tag = next((n for n in expr.walk() if getattr(n, 'name', None) == "index"), None)
+                index_expr = find_tag_by_name(index_tag, "expr") if index_tag else None
+                if index_expr:
+                    index_str = translate(index_expr).strip()
+                    value_str = None
+
+                    found_eq = False
+                    for child in expr.children:
+                        if getattr(child, 'name', None) == "operator" and getattr(child, 'text', '') == "=":
+                            found_eq = True
+                        elif found_eq and getattr(child, 'name', None) == "literal":
+                            value_str = translate(child).strip()
+                            break
+
+                    if value_str:
+                        used_index_keys.add(index_str)
+                        items.append(f"{var_name}[{index_str}] = {value_str}")
+
+        # Agora, adiciona os valores que não têm índice explícito
+        for expr in tag.find_children("expr"):
+            if not has_any_index(expr):
+                for child in expr.children:
+                    if getattr(child, 'name', None) == "literal":
+                        value_str = translate(child).strip()
+
+                        # pula índices já usados
+                        while str(sequential_index) in used_index_keys:
+                            sequential_index += 1
+
+                        items.append(f"{var_name}[{sequential_index}] = {value_str}")
+                        used_index_keys.add(str(sequential_index))
+                        sequential_index += 1
+                        break
+
+        return "(" + ", ".join(items) + ")"
+
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def extract_index_int(expr: Tag, translate_fn) -> int | None:
+    """Extrai valor inteiro do índice, se possível."""
+    index_tag = next((n for n in expr.walk() if getattr(n, 'name', None) == "index"), None)
+    index_expr = find_tag_by_name(index_tag, "expr") if index_tag else None
+    if index_expr:
+        try:
+            return int(translate_fn(index_expr).strip())
+        except (ValueError, TypeError):
+            return None
+    return None
+
+@register("block", priority=50)
+def translate_array_block(tag: Tag) -> str | None:
+    """
+    Traduz blocos sequenciais com melhor recursão.
+    """
+    from source.xml2clearly.translate import translate
+
+    if not is_array_initialization_block(tag):
+        return None
+
+    try:
+        return translate_block_recursive(tag, translate)
+    except Exception:
+        return None
+
+
+# =============================================================================
+# FUNÇÕES AUXILIARES MELHORADAS
+# =============================================================================
+
+def parse_indexed_expression(expr: Tag, var_name: str, translate_fn) -> str | None:
+    """
+    Extrai item de expressão indexada de forma mais robusta.
+    """
+    try:
+        # Verifica se tem index (elemento indexado)
+        index_tag = None
+        for node in expr.walk():
+            if hasattr(node, 'name') and node.name == "index":
+                index_tag = node
+                break
+
+        if index_tag:
+            # Elemento indexado: [i] = valor
+            index_expr = find_tag_by_name(index_tag, "expr")
+            index_str = translate_fn(index_expr).strip() if index_expr else "_"
+
+            # Procura o valor após o operador =
+            # O valor vem depois do index na estrutura XML
+            value_str = None
+            found_operator = False
+
+            for child in expr.children:
+                if hasattr(child, 'name'):
+                    if child.name == "operator" and hasattr(child, 'text') and child.text == "=":
+                        found_operator = True
+                    elif found_operator and child.name == "literal":
+                        value_str = translate_fn(child).strip()
+                        break
+
+            if value_str:
+                return f"{var_name}[{index_str}] = {value_str}"
+        else:
+            # Elemento sequencial - procura literal diretamente
+            for child in expr.children:
+                if hasattr(child, 'name') and child.name == "literal":
+                    value_str = translate_fn(child).strip()
+                    return f"{var_name}[?] = {value_str}"
+
+    except Exception:
+        pass
+
+    return None
+
+
+def translate_block_recursive(block_tag: Tag, translate_fn) -> str:
+    """
+    Traduz bloco recursivamente de forma mais limpa.
+    """
+    elements = []
+
+    for child in block_tag.children:
+        if hasattr(child, 'name') and child.name == "expr":
+            element = translate_expression_content(child, translate_fn)
+            if element:
+                elements.append(element)
+
+    return "[" + ", ".join(elements) + "]"
+
+
+def translate_expression_content(expr_tag: Tag, translate_fn) -> str | None:
+    """
+    Traduz conteúdo de expressão (bloco ou valor).
+    """
+    # Procura primeiro por blocos aninhados
+    block_tag = find_tag_by_name(expr_tag, "block")
+    if block_tag:
+        return translate_block_recursive(block_tag, translate_fn)
+
+    # Senão, traduz a expressão diretamente
+    return translate_fn(expr_tag).strip()
+
+
+def is_array_tag(tag: Tag) -> bool:
+    """Verifica se é declaração de array (versão mais robusta)."""
+    try:
+        name_tags = tag.find_children("name")
+        return any(has_index_children(name) for name in name_tags)
+    except Exception:
+        return False
+
+
 def has_index_children(tag: Tag) -> bool:
-    """Verifica se a tag tem filhos do tipo 'index'."""
-    return any(child.name == "index" for child in tag.children)
+    """Verifica se tem filhos index."""
+    try:
+        return any(hasattr(child, 'name') and child.name == "index"
+                   for child in tag.children)
+    except Exception:
+        return False
+
+
+def is_indexed_array_block(tag: Tag) -> bool:
+    """Detecta blocos indexados de forma mais simples."""
+    try:
+        for expr in tag.find_children("expr"):
+            if has_any_index(expr):
+                return True
+        return False
+    except Exception:
+        return False
 
 
 def is_array_initialization_block(tag: Tag) -> bool:
     """
-    Verifica se um bloco é uma inicialização de array.
-
-    Critérios mais flexíveis:
-    1. Tag pai deve ser 'expr'
-    2. Tag avô deve ser 'init' OU outro bloco de array
-    3. Ou estar dentro de uma estrutura de inicialização
+    Detecta blocos de inicialização (versão mais precisa).
     """
-    if not tag.parent:
+    try:
+        if not tag.parent:
+            return False
+
+        parent = tag.parent
+        grandparent = parent.parent if parent else None
+
+        # Caso direto: parent=expr, grandparent=init
+        if (hasattr(parent, 'name') and parent.name == "expr" and
+                hasattr(grandparent, 'name') and grandparent and grandparent.name == "init"):
+            return True
+
+        # Caso aninhado: dentro de outro bloco de array (arrays multidimensionais)
+        if (hasattr(parent, 'name') and parent.name == "expr" and
+                hasattr(grandparent, 'name') and grandparent and grandparent.name == "block"):
+            return is_array_initialization_block(grandparent)
+
         return False
-
-    parent = tag.parent
-    grandparent = parent.parent if parent else None
-
-    # Caso direto: parent=expr, grandparent=init
-    if parent.name == "expr" and grandparent and grandparent.name == "init":
-        return True
-
-    # Caso aninhado: dentro de outro bloco de array (arrays multidimensionais)
-    if parent.name == "expr" and grandparent and grandparent.name == "block":
-        return is_array_initialization_block(grandparent)
-
-    # Caso adicional: pode estar em uma expressão dentro de um bloco
-    if parent.name == "expr":
-        current = parent
-        while current and current.parent:
-            current = current.parent
-            if current.name == "init":
-                return True
-            if current.name == "block" and is_array_initialization_block(current):
-                return True
-
-    return False
+    except Exception:
+        return False
 
 
 def extract_variable_name(tag: Tag) -> str:
-    """Extrai o nome da variável de uma declaração."""
-    name_tags = tag.find_children("name")
-    if not name_tags:
-        return "UNNAMED"
+    """Extrai nome com fallbacks."""
+    try:
+        name_tags = tag.find_children("name")
+        if not name_tags:
+            return config.UNNAMED_VAR
 
-    # Procura pelo primeiro filho 'name' dentro do primeiro 'name'
-    var_name_tags = name_tags[0].find_children("name")
-    if var_name_tags:
-        return var_name_tags[0].text.strip()
+        # Tenta primeiro filho name
+        inner_names = name_tags[0].find_children("name")
+        if inner_names:
+            return safe_get_text(inner_names[0], config.UNNAMED_VAR)
 
-    # Fallback: usa o texto direto se não há filhos
-    return name_tags[0].text.strip() if name_tags[0].text else "UNNAMED"
+        # Fallback para texto direto
+        return safe_get_text(name_tags[0], config.UNNAMED_VAR)
+
+    except Exception:
+        return config.UNNAMED_VAR
 
 
 def extract_base_type(tag: Tag) -> str:
-    """Extrai o tipo base, considerando referências a tipos anteriores."""
-    type_tags = tag.find_children("type")
-    if not type_tags:
-        return "UNKNOWN_TYPE"
-
-    type_tag = type_tags[0]
-
-    # Se tem referência ao tipo anterior
-    if type_tag.attrib.get("ref") == "prev":
-        return find_previous_decl_type_improved(tag)
-
-    return translate_type(type_tag)
-
-
-def find_previous_decl_type_improved(tag: Tag) -> str:
-    """
-    Versão melhorada que funciona corretamente com arrays.
-
-    Procura pela primeira declaração anterior que tem um tipo explícito,
-    extraindo o tipo base (sem as dimensões do array).
-    """
-    parent = tag.parent
-    if not parent:
-        return "UNKNOWN_TYPE"
-
-    decls = parent.find_children("decl")
+    """Extrai tipo base com cache simples."""
     try:
-        current_index = decls.index(tag)
-    except ValueError:
-        return "UNKNOWN_TYPE"
+        type_tags = tag.find_children("type")
+        if not type_tags:
+            return config.UNKNOWN_TYPE
 
-    # Procura declarações anteriores
-    for i in range(current_index - 1, -1, -1):
-        prev_decl = decls[i]
-        type_tags = prev_decl.find_children("type")
+        type_tag = type_tags[0]
 
-        if type_tags and not type_tags[0].attrib.get("ref") == "prev":
-            # Encontrou um tipo explícito
-            return translate_type(type_tags[0])
+        # Se referencia tipo anterior
+        if type_tag.attrib.get("ref") == "prev":
+            return find_previous_type(tag)
 
-    return "UNKNOWN_TYPE"
+        return translate_type(type_tag)
+
+    except Exception:
+        return config.UNKNOWN_TYPE
+
+
+def find_previous_type(tag: Tag) -> str:
+    """Encontra tipo anterior (versão mais simples)."""
+    try:
+        parent = tag.parent
+        if not parent:
+            return config.UNKNOWN_TYPE
+
+        decls = parent.find_children("decl")
+        current_idx = decls.index(tag) if tag in decls else -1
+
+        # Procura declaração anterior com tipo explícito
+        for i in range(current_idx - 1, -1, -1):
+            prev_decl = decls[i]
+            type_tags = prev_decl.find_children("type")
+
+            if type_tags and type_tags[0].attrib.get("ref") != "prev":
+                return translate_type(type_tags[0])
+
+        return config.UNKNOWN_TYPE
+
+    except Exception:
+        return config.UNKNOWN_TYPE
+
+
+def infer_variable_name(tag: Tag) -> str | None:
+    """Infere nome da variável (versão simplificada)."""
+    try:
+        current = tag
+        # Sobe até encontrar decl
+        while current and not (hasattr(current, 'name') and current.name == "decl"):
+            current = current.parent
+
+        if current:
+            return extract_variable_name(current)
+
+    except Exception:
+        pass
+
+    return None
 
 
 def build_array_type(tag: Tag, base_type: str, translate_fn) -> str:
-    """
-    Constrói a representação do tipo array aninhado.
+    """Constrói tipo array (versão mais robusta)."""
+    try:
+        name_tags = tag.find_children("name")
+        if not name_tags:
+            return base_type
 
-    Exemplo: int[3][2] -> array(3, array(2, int))
-    """
-    name_tags = tag.find_children("name")
-    if not name_tags:
+        indices = name_tags[0].find_children("index")
+        if not indices:
+            return base_type
+
+        # Constrói tipo da direita para esquerda
+        result_type = base_type
+        for index in reversed(indices):
+            dim = extract_array_dimension(index, translate_fn)
+            result_type = f"array({dim}, {result_type})"
+
+        return result_type
+
+    except Exception:
         return base_type
-
-    indices = name_tags[0].find_children("index")
-    if not indices:
-        return base_type
-
-    # Extrai dimensões
-    dimensions = []
-    for index in indices:
-        dim = extract_array_dimension(index, translate_fn)
-        dimensions.append(dim)
-
-    # Constrói tipo aninhado da direita para a esquerda
-    result_type = base_type
-    for dim in reversed(dimensions):
-        result_type = f"array({dim}, {result_type})"
-
-    return result_type
 
 
 def extract_array_dimension(index_tag: Tag, translate_fn) -> str:
-    """
-    Extrai a dimensão de um índice de array.
+    """Extrai dimensão do array."""
+    try:
+        expr_tags = index_tag.find_children("expr")
+        if expr_tags:
+            return translate_fn(expr_tags[0]).strip()
+    except Exception:
+        pass
 
-    Retorna:
-    - A expressão traduzida se existe
-    - "_" se o índice está vazio (array dinâmico)
-    """
-    expr_tags = index_tag.find_children("expr")
-    if expr_tags:
-        return translate_fn(expr_tags[0]).strip()
-    return "_"
+    return config.UNKNOWN_DIM
 
 
 def translate_array_init(init_tag: Tag, translate_fn) -> str:
-    expr_tags = init_tag.find_children("expr")
-    if not expr_tags:
-        return "EMPTY_INIT"
+    """Traduz inicialização."""
+    try:
+        expr_tags = init_tag.find_children("expr")
+        if not expr_tags:
+            return "[]"
 
-    # Se contiver bloco (ex: {1, 2, 3}), garante que será traduzido corretamente
-    expr = expr_tags[0]
-    block_tags = expr.find_children("block")
-    if block_tags:
-        return translate_fn(block_tags[0]).strip()
+        expr = expr_tags[0]
+        block_tags = expr.find_children("block")
+        if block_tags:
+            return translate_fn(block_tags[0]).strip()
 
-    return translate_fn(expr).strip()
+        return translate_fn(expr).strip()
+
+    except Exception:
+        return "[]"
 
 
 def translate_base_decl(tag: Tag) -> str:
-    """
-    Fallback para declarações não-array.
-    Evita import circular importando dentro da função.
-    """
-    from source.xml2clearly.declarations.variables import base
-    return base.translate_decl(tag)
+    """Fallback para declarações não-array."""
+    try:
+        from source.xml2clearly.declarations.variables import base
+        return base.translate_decl(tag)
+    except Exception:
+        return "TRANSLATION_ERROR"
+
