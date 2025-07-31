@@ -55,6 +55,18 @@ class Tag:
             results += match._search_path(parts[1:])
         return results
 
+    def find(self, name: str) -> 'Tag' or None:
+        for child in self.children:
+            if child.name == name:
+                return child
+        return None
+
+    def find_text(self, name: str) -> str or None:
+        node = self.find(name)
+        if node:
+            return node.text
+        return None
+
 
 def generate_tag(xml_file):
     tree = etree.parse(xml_file)

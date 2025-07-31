@@ -22,11 +22,9 @@ if __name__ == "__main__":
 
     # Se quiser limitar por nomes, edite aqui:
     filtros = [
-        "xml_manager",
         "translate",
-        "registry",
-        "base",
-
+        "functions",
+        "resolve"
         "__init__"
         # adicione o que quiser
     ]

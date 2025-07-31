@@ -1,9 +1,8 @@
 from source.xml2clearly.xml_manager import Tag
-from source.xml2clearly.registry import TRANSLATORS  # <-- agora importa daqui
-from source.xml2clearly.declarations import comments
-from source.xml2clearly.declarations import variables
-from source.xml2clearly.directives import include  # garante o registro
-
+from source.xml2clearly.registry import TRANSLATORS
+from source.xml2clearly.declarations import comments, variables, functions
+from source.xml2clearly.directives import include, macros  # garante o registro
+from source.xml2clearly.pointers import resolve  # garante o registro dos tradutores de ponteiros
 
 def compute_spacing(prev_end, curr_start):
     prev_line, prev_col = prev_end

@@ -7,6 +7,7 @@ from source.xml2clearly.declarations.variables.helpers import (
     extract_text_recursive,
 )
 
+
 @register("decl_stmt", priority=10)
 def translate_decl_stmt(tag: Tag) -> str:
     from source.xml2clearly.translate import translate  # import tardio para quebrar ciclo
@@ -14,6 +15,7 @@ def translate_decl_stmt(tag: Tag) -> str:
     decls = tag.find_children("decl")
     parts = [translate(decl) for decl in decls if translate(decl).strip()]
     return ", ".join(parts)
+
 
 @register("decl", priority=10)
 def translate_decl(tag: Tag) -> str:
@@ -35,10 +37,66 @@ def translate_decl(tag: Tag) -> str:
     else:
         return f"{var_name}: {type_str}"
 
+
 @register("expr", priority=10)
 def translate_expr(tag: Tag) -> str:
-    return extract_text_recursive(tag)
+    """Traduz expressões de forma mais inteligente"""
+    from source.xml2clearly.translate import translate
+
+    # Se a expressão tem filhos, processa cada um
+    if tag.children:
+        parts = []
+        for child in tag.children:
+            translated = translate(child)
+            if translated and translated.strip():
+                parts.append(translated.strip())
+
+        # Junta com espaços apropriados
+        result = " ".join(parts)
+        return result if result else extract_text_recursive(tag)
+    else:
+        # Se não tem filhos, usa o texto direto
+        return tag.text.strip() if tag.text else ""
+
 
 @register("literal", priority=10)
 def translate_literal(tag: Tag) -> str:
-    return tag.text or ""
+    return tag.text.strip() if tag.text else ""
+
+
+@register("comment", priority=10)
+def translate_comment(tag: Tag) -> str:
+    """Traduz comentários preservando o formato original"""
+    comment_type = tag.attrib.get("type", "")
+
+    if comment_type == "line":
+        # Comentário de linha //
+        return f"# {tag.text.strip()}" if tag.text else ""
+    elif comment_type == "block":
+        # Comentário de bloco /* */
+        lines = tag.text.strip().split('\n') if tag.text else [""]
+        if len(lines) == 1:
+            return f"# {lines[0].strip()}"
+        else:
+            # Comentário multi-linha
+            result = ['"""']
+            for line in lines:
+                result.append(line.strip())
+            result.append('"""')
+            return '\n'.join(result)
+
+    return ""
+
+
+@register("block_content", priority=10)
+def translate_block_content(tag: Tag) -> str:
+    """Traduz conteúdo de blocos"""
+    from source.xml2clearly.translate import translate
+
+    parts = []
+    for child in tag.children:
+        translated = translate(child)
+        if translated and translated.strip():
+            parts.append(translated.strip())
+
+    return "\n".join(parts) if parts else ""
