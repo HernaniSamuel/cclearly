@@ -2,6 +2,7 @@ from source.xml2clearly.xml_manager import Tag
 from source.xml2clearly.registry import TRANSLATORS  # <-- agora importa daqui
 from source.xml2clearly.declarations import comments
 from source.xml2clearly.declarations import variables
+from source.xml2clearly.directives import include  # garante o registro
 
 
 def compute_spacing(prev_end, curr_start):
